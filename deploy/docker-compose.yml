@@ -1,0 +1,34 @@
+# Portainer stack "marquee". Secrets come from the stack's environment variables
+# (Portainer → Stacks → marquee → Environment variables) — never from this file.
+services:
+  marquee:
+    # built on jerry from the repo: docker build -t marquee:latest https://github.com/basdhaweio/marquee.git#main
+    image: marquee:latest
+    container_name: marquee
+    network_mode: host          # reach every service on 127.0.0.1; listens on 127.0.0.1:8890 only
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"  # local image; rebuild to update
+    environment:
+      - BASE_PATH=/hub
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ALLOWED_PLEX_USERS=${ALLOWED_PLEX_USERS}
+      - SONARR_URL=http://127.0.0.1:8989/sonarr
+      - SONARR_KEY=${SONARR_KEY}
+      - RADARR_URL=http://127.0.0.1:7878/radarr
+      - RADARR_KEY=${RADARR_KEY}
+      - RADARR4K_URL=http://127.0.0.1:7879/radarr4k
+      - RADARR4K_KEY=${RADARR4K_KEY}
+      - LIDARR_URL=http://127.0.0.1:8686
+      - LIDARR_KEY=${LIDARR_KEY}
+      - PROWLARR_URL=http://127.0.0.1:9696/prowlarr
+      - PROWLARR_KEY=${PROWLARR_KEY}
+      - SEERR_URL=http://127.0.0.1:5055
+      - SEERR_KEY=${SEERR_KEY}
+      - TAUTULLI_URL=http://127.0.0.1:8181/tautulli
+      - TAUTULLI_KEY=${TAUTULLI_KEY}
+      - SEERR_LINK=https://jerry-eq.tail242977.ts.net/
+      - SONARR_LINK=https://jerry-eq.tail242977.ts.net/sonarr/
+      - RADARR_LINK=https://jerry-eq.tail242977.ts.net/radarr/login
+      - PROWLARR_LINK=https://jerry-eq.tail242977.ts.net/prowlarr/login
+      - TAUTULLI_LINK=https://jerry-eq.tail242977.ts.net/tautulli/
