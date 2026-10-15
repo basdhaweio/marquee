@@ -7,7 +7,7 @@ VC=${1:?versionCode}; VN=${2:?versionName}; NOTES=${3:-}
 SRC=$(cd "$(dirname "$0")" && pwd)
 KEYS=$HOME/marquee-android/keys
 OUT=$HOME/marquee/data/app
-docker run --rm -u 1000:1000 -e HOME=/tmp -v "$SRC":/src -v "$KEYS":/keys:ro -v android-gradle-cache:/cache android-build \
+docker run --rm -u 1000:1000 -e HOME=/cache/home -v "$SRC":/src -v "$KEYS":/keys:ro -v android-gradle-cache:/cache android-build \
   gradle --no-daemon -q assembleRelease -PmarqueeKeystore=/keys/keystore.properties -PversionCode="$VC" -PversionName="$VN"
 mkdir -p "$OUT"
 cp "$SRC/app/build/outputs/apk/release/app-release.apk" "$OUT/marquee.apk"
