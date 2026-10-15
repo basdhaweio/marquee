@@ -7,10 +7,14 @@ services:
     container_name: marquee
     network_mode: host          # reach every service on 127.0.0.1; listens on 127.0.0.1:8890 only
     restart: unless-stopped
+    volumes:
+      - ./data:/app/data      # assistant conversations + the Android APK for self-update
     labels:
       - "com.centurylinklabs.watchtower.enable=false"  # local image; rebuild to update
     environment:
       - BASE_PATH=/hub
+      - DATA_DIR=/app/data
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}   # Claude assistant; leave empty to disable
       - SESSION_SECRET=${SESSION_SECRET}
       - ALLOWED_PLEX_USERS=${ALLOWED_PLEX_USERS}
       - SONARR_URL=http://127.0.0.1:8989/sonarr

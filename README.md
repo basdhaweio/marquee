@@ -28,3 +28,17 @@ tailscale funnel --bg --https=443 --set-path /hub http://127.0.0.1:8890/hub
 ## Local dev
 `DEV_NO_AUTH=1 COOKIE_SECURE=false` plus the `*_URL` / `*_KEY` env vars, then
 `uvicorn server.app:app --port 8890` and open http://localhost:8890/hub/.
+
+## Android app (`android/`)
+
+Native Kotlin + Jetpack Compose client for the same API: Home, Queue (tagged per app), Library (Shows /
+Movies / 4K with details, monitoring, search, release picking and add), Requests, Activity & stats,
+Calendar, History, Indexers, and **Claude** — an assistant that can look things up and act on the stack,
+with every change shown as an approval card first.
+
+- Signs in with Plex (`/auth/pin?client=android`) and keeps a signed Bearer token; no service keys on the phone.
+- Assistant: `server/assistant.py` (Claude API, manual tool loop so it can pause for approval). Set
+  `ANTHROPIC_API_KEY` in the server's environment to enable it.
+- Build on jerry: `docker build -t android-build android/build-env` once, then
+  `android/build.sh <versionCode> <versionName> "<notes>"` — signs with the keystore in
+  `~/marquee-android/keys` and publishes to `data/app/`, where the app's update check finds it.

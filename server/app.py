@@ -6,81 +6,19 @@ usernames in ALLOWED_PLEX_USERS. Everything is mounted under BASE_PATH (default 
 sit behind Tailscale Funnel at https://<host>/hub without path rewriting.
 """
 import asyncio
-import base64
-import hashlib
-import hmac
-import json
-import os
 import time
-import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-BASE = os.environ.get("BASE_PATH", "/hub").rstrip("/")
-SECRET = os.environ.get("SESSION_SECRET") or "dev-only-secret"
-ALLOWED = {u.strip().lower() for u in os.environ.get("ALLOWED_PLEX_USERS", "").split(",") if u.strip()}
-CLIENT_ID = os.environ.get("PLEX_CLIENT_ID") or str(uuid.uuid5(uuid.NAMESPACE_URL, "marquee:" + SECRET))
-COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() != "false"
-DEV_NO_AUTH = os.environ.get("DEV_NO_AUTH") == "1"  # local testing only
-SESSION_DAYS = 30
-WEB = Path(os.environ.get("WEB_DIR", Path(__file__).resolve().parent.parent / "web"))
-
-# Services: URL includes any URL base; key comes from env. Missing ones are simply skipped.
-SERVICES = {
-    "sonarr": ("SONARR_URL", "SONARR_KEY"),
-    "radarr": ("RADARR_URL", "RADARR_KEY"),
-    "radarr4k": ("RADARR4K_URL", "RADARR4K_KEY"),
-    "lidarr": ("LIDARR_URL", "LIDARR_KEY"),
-    "prowlarr": ("PROWLARR_URL", "PROWLARR_KEY"),
-    "seerr": ("SEERR_URL", "SEERR_KEY"),
-    "tautulli": ("TAUTULLI_URL", "TAUTULLI_KEY"),
-}
-CFG = {n: (os.environ.get(u, "").rstrip("/"), os.environ.get(k, "")) for n, (u, k) in SERVICES.items()}
-ARR_API = {"sonarr": "v3", "radarr": "v3", "radarr4k": "v3", "lidarr": "v1", "prowlarr": "v1"}
-LABEL = {"sonarr": "Sonarr", "radarr": "Radarr", "radarr4k": "Radarr 4K", "lidarr": "Lidarr",
-         "prowlarr": "Prowlarr", "seerr": "Seerr", "tautulli": "Tautulli"}
-# Public links shown in the app (open the real UI). Override per service with <NAME>_LINK.
-LINKS = {n: os.environ.get(f"{n.upper()}_LINK", "") for n in SERVICES}
+from server.core import (ALLOWED, APP_SESSION_DAYS, BASE, CLIENT_ID, COOKIE_SECURE, LABEL, LINKS, SERVICES,
+                         SESSION_DAYS, WEB, arr, configured, current_user, http, poster, safe, seerr, sign,
+                         tautulli)
 
 app = FastAPI(title="Marquee", docs_url=None, redoc_url=None, openapi_url=None)
-http = httpx.AsyncClient(timeout=20.0, follow_redirects=True)
-
-
-def configured(name):
-    url, key = CFG[name]
-    return bool(url and key)
-
-
-# ---------------------------------------------------------------- sessions
-def _sign(payload: dict) -> str:
-    body = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
-    mac = hmac.new(SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()
-    return f"{body}.{mac}"
-
-
-def _verify(token: str):
-    try:
-        body, mac = token.rsplit(".", 1)
-        if not hmac.compare_digest(mac, hmac.new(SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()):
-            return None
-        data = json.loads(base64.urlsafe_b64decode(body))
-        return data if data.get("exp", 0) > time.time() else None
-    except Exception:
-        return None
-
-
-def current_user(request: Request):
-    if DEV_NO_AUTH:
-        return {"u": "dev"}
-    data = _verify(request.cookies.get("mq_session", ""))
-    if not data:
-        raise HTTPException(401, "sign in required")
-    return data
 
 
 # ---------------------------------------------------------------- plex sign-in
@@ -89,11 +27,12 @@ auth = APIRouter(prefix=BASE + "/auth")
 
 
 @auth.post("/pin")
-async def new_pin(request: Request):
+async def new_pin(request: Request, client: str = "web"):
+    """client=android sends the Plex page back into the app (marquee://signed-in) instead of the PWA."""
     r = await http.post("https://plex.tv/api/v2/pins", params={"strong": "true"}, headers=PLEX_HEADERS)
     r.raise_for_status()
     pin = r.json()
-    forward = str(request.base_url).rstrip("/") + BASE + "/#/signed-in"
+    forward = "marquee://signed-in" if client == "android" else str(request.base_url).rstrip("/") + BASE + "/#/signed-in"
     url = ("https://app.plex.tv/auth#?" + httpx.QueryParams({
         "clientID": CLIENT_ID, "code": pin["code"], "forwardUrl": forward,
         "context[device][product]": "Marquee"}).__str__())
@@ -101,7 +40,7 @@ async def new_pin(request: Request):
 
 
 @auth.get("/pin/{pin_id}")
-async def check_pin(pin_id: int, response: Response):
+async def check_pin(pin_id: int, response: Response, client: str = "web"):
     r = await http.get(f"https://plex.tv/api/v2/pins/{pin_id}", headers=PLEX_HEADERS)
     r.raise_for_status()
     token = r.json().get("authToken")
@@ -113,7 +52,10 @@ async def check_pin(pin_id: int, response: Response):
     name = (user.get("username") or user.get("title") or "").lower()
     if name not in ALLOWED:
         return JSONResponse({"status": "denied", "user": name}, status_code=403)
-    response.set_cookie("mq_session", _sign({"u": name, "exp": time.time() + SESSION_DAYS * 86400}),
+    if client == "android":   # the app keeps this and sends it as a Bearer token
+        return {"status": "ok", "user": name, "thumb": user.get("thumb"),
+                "token": sign({"u": name, "exp": time.time() + APP_SESSION_DAYS * 86400, "c": "android"})}
+    response.set_cookie("mq_session", sign({"u": name, "exp": time.time() + SESSION_DAYS * 86400}),
                         max_age=SESSION_DAYS * 86400, httponly=True, secure=COOKIE_SECURE,
                         samesite="lax", path=BASE or "/")
     return {"status": "ok", "user": name, "thumb": user.get("thumb")}
@@ -128,44 +70,6 @@ async def me(user=Depends(current_user)):
 async def logout(response: Response):
     response.delete_cookie("mq_session", path=BASE or "/")
     return {"ok": True}
-
-
-# ---------------------------------------------------------------- service clients
-async def arr(name, path, method="GET", params=None, body=None):
-    url, key = CFG[name]
-    r = await http.request(method, f"{url}/api/{ARR_API[name]}{path}", params=params, json=body,
-                           headers={"X-Api-Key": key})
-    r.raise_for_status()
-    return r.json() if r.content else {}
-
-
-async def seerr(path, method="GET", params=None, body=None):
-    url, key = CFG["seerr"]
-    r = await http.request(method, f"{url}/api/v1{path}", params=params, json=body, headers={"X-Api-Key": key})
-    r.raise_for_status()
-    return r.json() if r.content else {}
-
-
-async def tautulli(cmd, **params):
-    url, key = CFG["tautulli"]
-    r = await http.get(f"{url}/api/v2", params={"apikey": key, "cmd": cmd, **params})
-    r.raise_for_status()
-    return r.json()["response"]["data"]
-
-
-async def safe(coro, default=None):
-    """Never let one service being down break a whole view."""
-    try:
-        return await coro
-    except Exception as e:  # noqa: BLE001
-        return {"_error": f"{type(e).__name__}: {str(e)[:160]}"} if default is None else default
-
-
-def poster(images, kind="poster"):
-    for i in images or []:
-        if i.get("coverType") == kind:
-            return i.get("remoteUrl") or i.get("url")
-    return None
 
 
 api = APIRouter(prefix=BASE + "/api", dependencies=[Depends(current_user)])
@@ -416,9 +320,14 @@ async def links():
     return {n: {"label": LABEL[n], "url": LINKS[n]} for n in SERVICES if LINKS[n]}
 
 
-# ---------------------------------------------------------------- static PWA
+# ---------------------------------------------------------------- routers
+from server import appdist, assistant, media  # noqa: E402  (they import server.core, not this module)
+
 app.include_router(auth)
 app.include_router(api)
+app.include_router(media.router)
+app.include_router(assistant.router)
+app.include_router(appdist.router)
 
 
 @app.get("/")
@@ -433,7 +342,7 @@ async def base_noslash():
 
 @app.get(BASE + "/healthz")
 async def healthz():
-    return {"ok": True, "services": {n: configured(n) for n in SERVICES}}
+    return {"ok": True, "services": {n: configured(n) for n in SERVICES}, "assistant": assistant.enabled()}
 
 
 app.mount(BASE, StaticFiles(directory=WEB, html=True), name="web")
