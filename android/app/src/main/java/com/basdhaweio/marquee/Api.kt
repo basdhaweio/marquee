@@ -29,7 +29,7 @@ class Session(ctx: Context) {
         get() = prefs.getString("server", null) ?: BuildConfig.DEFAULT_SERVER
         set(v) = prefs.edit().putString("server", v.trimEnd('/')).apply()
     var token: String?
-        get() = prefs.getString("token", null)
+        get() = prefs.getString("token", null) ?: BuildConfig.DEV_TOKEN.ifEmpty { null }
         set(v) = prefs.edit().putString("token", v).apply()
     var user: String?
         get() = prefs.getString("user", null)

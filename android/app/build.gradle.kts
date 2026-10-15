@@ -25,6 +25,7 @@ android {
         versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = (findProperty("versionName") as String?) ?: "1.0.0"
         buildConfigField("String", "DEFAULT_SERVER", "\"https://jerry-eq.tail242977.ts.net/hub\"")
+        buildConfigField("String", "DEV_TOKEN", "\"\"")
     }
 
     signingConfigs {
@@ -39,6 +40,13 @@ android {
     }
 
     buildTypes {
+        // Debug builds are for the emulator on jerry: they talk to a throwaway Marquee started with
+        // DEV_NO_AUTH=1 on 127.0.0.1:8891 (10.0.2.2 from inside the emulator) and skip Plex sign-in.
+        debug {
+            applicationIdSuffix = ".debug"
+            buildConfigField("String", "DEFAULT_SERVER", "\"http://10.0.2.2:8891/hub\"")
+            buildConfigField("String", "DEV_TOKEN", "\"dev\"")
+        }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("release")

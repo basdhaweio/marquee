@@ -1,0 +1,13 @@
+# Headless Android emulator for testing the Marquee app on jerry (needs /dev/kvm).
+# Build:  docker build -t android-emu -f android/build-env/Dockerfile.emulator android/build-env
+# Run:    docker run -d --name android-emu --device /dev/kvm --network host android-emu
+#         then: docker exec android-emu adb install /src/app-debug.apk   (mount the APK at /src)
+FROM android-build
+RUN sdkmanager "emulator" "system-images;android-35;google_apis;x86_64" >/dev/null \
+ && echo no | avdmanager create avd -n test -k "system-images;android-35;google_apis;x86_64" -d pixel_6 >/dev/null
+ENV PATH=$PATH:/opt/android/emulator
+# the emulator binary links X11/GL/audio libs even when run with -no-window
+RUN apt-get update && apt-get install -y --no-install-recommends libx11-6 libxext6 libxrender1 libxcb1 libgl1 libpulse0 \
+    libnss3 libxkbfile1 libxcomposite1 libxcursor1 libxi6 libxtst6 libxdamage1 libxrandr2 libasound2 libdbus-1-3 \
+    libfontconfig1 libxkbcommon0 libxcb-cursor0 && rm -rf /var/lib/apt/lists/*
+CMD ["emulator", "-avd", "test", "-no-window", "-no-audio", "-no-boot-anim", "-gpu", "swiftshader_indirect", "-no-snapshot", "-memory", "3072"]

@@ -6,6 +6,8 @@ usernames in ALLOWED_PLEX_USERS. Everything is mounted under BASE_PATH (default 
 sit behind Tailscale Funnel at https://<host>/hub without path rewriting.
 """
 import asyncio
+import os
+import shutil
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -95,15 +97,24 @@ async def overview():
         return out
 
     async def disks():
+        out = []
+        # STORAGE_PATHS="UNAS=/unas,..." - mounts measured directly (Sonarr doesn't report network shares)
+        for spec in filter(None, os.environ.get("STORAGE_PATHS", "").split(",")):
+            label, _, path = spec.partition("=")
+            try:
+                u = shutil.disk_usage(path)
+                out.append({"path": path, "label": label, "free": u.free, "total": u.total})
+            except OSError:
+                pass
         if not configured("sonarr"):
-            return []
+            return out
         d = await safe(arr("sonarr", "/diskspace"), [])
-        seen, out = set(), []
+        seen = {x["total"] for x in out}
         for x in d if isinstance(d, list) else []:
             if x.get("totalSpace", 0) < 50 * 2**30 or x["totalSpace"] in seen:
                 continue
             seen.add(x["totalSpace"])
-            out.append({"path": x.get("path"), "label": x.get("label") or x.get("path"),
+            out.append({"path": x.get("path"), "label": x.get("label") or ("jerry (system SSD)" if x.get("path") == "/" else x.get("path")),
                         "free": x.get("freeSpace", 0), "total": x.get("totalSpace", 0)})
         return out
 

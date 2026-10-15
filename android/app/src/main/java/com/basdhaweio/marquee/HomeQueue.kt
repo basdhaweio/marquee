@@ -39,7 +39,7 @@ fun HomeScreen(nav: NavHostController) {
     Loadable(load = { deps.api.overview() }) { o, _ ->
         LazyColumn(contentPadding = ListPadding) {
             item {
-                Text("Hi ${deps.session.user ?: ""}", style = MaterialTheme.typography.headlineSmall,
+                Text(deps.session.user?.let { "Hi $it" } ?: "Marquee", style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.padding(start = 16.dp, top = 16.dp))
             }
             if (o.pendingRequests > 0) item {

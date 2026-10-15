@@ -9,11 +9,13 @@ services:
     restart: unless-stopped
     volumes:
       - ./data:/app/data      # assistant conversations + the Android APK for self-update
+      - /mnt/unas:/unas:ro    # only to show the UNAS's free/total space on Home
     labels:
       - "com.centurylinklabs.watchtower.enable=false"  # local image; rebuild to update
     environment:
       - BASE_PATH=/hub
       - DATA_DIR=/app/data
+      - STORAGE_PATHS=UNAS=/unas
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}   # Claude assistant; leave empty to disable
       - SESSION_SECRET=${SESSION_SECRET}
       - ALLOWED_PLEX_USERS=${ALLOWED_PLEX_USERS}

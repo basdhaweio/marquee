@@ -55,6 +55,8 @@ val AppColors = mapOf("sonarr" to Color(0xFF35C5F4), "radarr" to Color(0xFFFFC23
 
 private val Scheme = darkColorScheme(
     primary = Gold, onPrimary = Color(0xFF1B1405), secondary = Gold,
+    secondaryContainer = Color(0xFF3D3016), onSecondaryContainer = Gold,   // nav-bar selection pill
+    primaryContainer = Color(0xFF3D3016), onPrimaryContainer = Gold,       // floating action buttons
     background = Color(0xFF121212), surface = Color(0xFF121212),
     surfaceVariant = Color(0xFF1E1E1E), surfaceContainer = Color(0xFF1A1A1A), surfaceContainerHigh = Color(0xFF222222),
     onBackground = Color(0xFFEDEDED), onSurface = Color(0xFFEDEDED), onSurfaceVariant = Color(0xFFB0B0B0),
