@@ -1,12 +1,15 @@
 package com.basdhaweio.marquee
 
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -100,7 +103,7 @@ fun SignInScreen(onSignedIn: () -> Unit) {
             scope.launch {
                 try {
                     val pin = deps.api.newPin()
-                    CustomTabsIntent.Builder().build().launchUrl(ctx, Uri.parse(pin.authUrl))
+                    openInBrowser(ctx, Uri.parse(pin.authUrl))
                     status = "Waiting for Plex…"
                     repeat(150) {
                         delay(2000)
@@ -121,6 +124,18 @@ fun SignInScreen(onSignedIn: () -> Unit) {
         Spacer(Modifier.height(24.dp))
         Muted("Server: ${deps.session.server}")
     }
+}
+
+/** The Plex app claims app.plex.tv links, so an unpinned intent opens it instead of the sign-in page.
+ *  Pin the tab to a real browser (the default one if it does Custom Tabs) and never hand off to other apps. */
+fun openInBrowser(ctx: Context, uri: Uri) {
+    val pm = ctx.packageManager
+    val probe = Intent(Intent.ACTION_VIEW, Uri.parse("http://example.com"))   // what plain web links resolve to
+    val browsers = pm.queryIntentActivities(probe, PackageManager.MATCH_ALL).map { it.activityInfo.packageName }
+    val pkg = CustomTabsClient.getPackageName(ctx, browsers) ?: browsers.firstOrNull()
+    val tab = CustomTabsIntent.Builder().setSendToExternalDefaultHandlerEnabled(false).build()
+    if (pkg != null) tab.intent.setPackage(pkg)
+    tab.launchUrl(ctx, uri)
 }
 
 // ---------------------------------------------------------------- shell
