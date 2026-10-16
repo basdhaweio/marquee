@@ -98,10 +98,15 @@ class Api(private val session: Session) {
         val obj = json.parseToJsonElement(raw("GET", "/api/queue")) as JsonObject
         return obj.mapNotNull { (k, v) -> (v as? JsonArray)?.let { k to json.decodeFromJsonElement<List<QueueItem>>(it) } }.toMap()
     }
-    suspend fun removeFromQueue(app: String, id: Int, blocklist: Boolean, search: Boolean) {
-        raw("POST", "/api/queue/$app/$id/remove", query = mapOf("blocklist" to blocklist, "search" to search))
+    /** keep = stop tracking it but leave the download in the client. */
+    suspend fun removeFromQueue(app: String, id: Int, blocklist: Boolean, search: Boolean, keep: Boolean = false) {
+        raw("POST", "/api/queue/$app/$id/remove", query = mapOf("blocklist" to blocklist, "search" to search, "keep" to keep))
     }
-    suspend fun calendar(days: Int = 14): Items<CalendarItem> = get("/api/calendar", mapOf("days" to days))
+    suspend fun calendar(days: Int = 14, back: Int = 1): Items<CalendarItem> =
+        get("/api/calendar", mapOf("days" to days, "back" to back))
+    suspend fun wanted(app: String, kind: String, page: Int = 1): WantedPage =
+        get("/api/wanted/$app", mapOf("kind" to kind, "page" to page))
+    suspend fun links(): Map<String, ServiceLink> = get("/api/links")
 
     // ---- library
     suspend fun shows(q: String = ""): Items<Show> = get("/api/shows", mapOf("q" to q))

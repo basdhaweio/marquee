@@ -26,7 +26,8 @@ import kotlinx.serialization.Serializable
     val poster: String? = null, val release: String? = null, val quality: String? = null, val progress: Double = 0.0,
     val size: Long = 0, val timeleft: String? = null, val status: String? = null, val state: String? = null,
     val health: String? = null, val messages: List<String> = emptyList(), val client: String? = null,
-    val protocol: String? = null,
+    val protocol: String? = null, val episodeId: Int? = null, val movieId: Int? = null, val seriesId: Int? = null,
+    val known: Boolean = true, val stuck: Boolean = false,
 )
 
 @Serializable data class Show(
@@ -85,7 +86,14 @@ import kotlinx.serialization.Serializable
 @Serializable data class CalendarItem(
     val app: String = "", val label: String = "", @SerialName("when") val time: String? = null, val title: String? = null,
     val sub: String? = null, val hasFile: Boolean? = null, val monitored: Boolean? = null, val poster: String? = null,
+    val seriesId: Int? = null, val episodeId: Int? = null, val movieId: Int? = null,
 )
+@Serializable data class WantedItem(
+    val app: String = "", val id: Int = 0, val seriesId: Int? = null, val title: String? = null, val sub: String? = null,
+    @SerialName("when") val time: String? = null, val poster: String? = null, val released: Boolean = true,
+    val quality: String? = null, val lastSearch: String? = null,
+)
+@Serializable data class WantedPage(val items: List<WantedItem> = emptyList(), val total: Int = 0, val page: Int = 1)
 
 @Serializable data class ConvMeta(val id: String = "", val title: String = "", val updated: Double? = null, val pending: Boolean = false)
 @Serializable data class ConvList(val enabled: Boolean = false, val model: String? = null, val items: List<ConvMeta> = emptyList())
@@ -99,5 +107,7 @@ import kotlinx.serialization.Serializable
 @Serializable data class Pin(val id: Long = 0, val authUrl: String = "", val code: String? = null)
 @Serializable data class PinStatus(val status: String = "", val user: String? = null, val token: String? = null)
 @Serializable data class AppLatest(val versionCode: Int = 0, val versionName: String? = null, val notes: String? = null, val url: String? = null)
+
+@Serializable data class ServiceLink(val label: String = "", val url: String = "")
 
 @Serializable data class Items<T>(val items: List<T> = emptyList())

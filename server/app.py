@@ -17,8 +17,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from server.core import (ALLOWED, APP_SESSION_DAYS, BASE, CLIENT_ID, COOKIE_SECURE, LABEL, LINKS, SERVICES,
-                         SESSION_DAYS, WEB, arr, configured, current_user, http, poster, safe, seerr, sign,
-                         tautulli)
+                         SESSION_DAYS, WEB, arr, configured, current_user, http, poster, quality_name, safe, seerr,
+                         sign, tautulli)
 
 app = FastAPI(title="Marquee", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -161,9 +161,18 @@ def _queue_item(n, q):
             "progress": round(100 * (1 - left / size), 1) if size else 0, "size": size,
             "timeleft": q.get("timeleft"), "status": q.get("status"),
             "state": q.get("trackedDownloadState"), "health": q.get("trackedDownloadStatus"),
-            "messages": msgs[:3] or ([q["errorMessage"]] if q.get("errorMessage") else []),
+            "messages": msgs[:6] or ([q["errorMessage"]] if q.get("errorMessage") else []),
             "client": q.get("downloadClient"), "protocol": q.get("protocol"),
-            "episodeId": (q.get("episode") or {}).get("id"), "movieId": q.get("movieId")}
+            "episodeId": (q.get("episode") or {}).get("id"), "movieId": q.get("movieId"),
+            "seriesId": q.get("seriesId"), "known": bool(q.get("seriesId") or q.get("movieId")),
+            "stuck": _stuck(q)}
+
+
+def _stuck(q):
+    """Needs a human: failed, can't import, or the client reports a problem (stalled, no peers...)."""
+    return (q.get("trackedDownloadStatus") in ("warning", "error")
+            or q.get("trackedDownloadState") in ("importBlocked", "importFailed", "failedPending")
+            or (q.get("status") or "").lower() in ("failed", "warning"))
 
 
 @api.get("/queue")
@@ -180,11 +189,12 @@ async def queue():
 
 
 @api.post("/queue/{name}/{qid}/remove")
-async def queue_remove(name: str, qid: int, blocklist: bool = True, search: bool = False):
+async def queue_remove(name: str, qid: int, blocklist: bool = True, search: bool = False, keep: bool = False):
+    """keep=true stops the arr tracking it but leaves the download in the client."""
     if name not in ("sonarr", "radarr", "radarr4k"):
         raise HTTPException(404)
     await arr(name, f"/queue/{qid}", "DELETE",
-              params={"removeFromClient": "true", "blocklist": str(blocklist).lower(),
+              params={"removeFromClient": str(not keep).lower(), "blocklist": str(blocklist).lower(),
                       "skipRedownload": str(not search).lower()})
     return {"ok": True}
 
@@ -204,9 +214,9 @@ async def search(name: str, body: dict):
 
 # ---------------------------------------------------------------- calendar
 @api.get("/calendar")
-async def calendar(days: int = 14):
-    start = datetime.now(timezone.utc).date() - timedelta(days=1)
-    end = start + timedelta(days=days + 1)
+async def calendar(days: int = 14, back: int = 1):
+    start = datetime.now(timezone.utc).date() - timedelta(days=max(0, min(back, 14)))
+    end = datetime.now(timezone.utc).date() + timedelta(days=min(days, 62) + 1)
     rng = {"start": start.isoformat(), "end": end.isoformat()}
     items = []
     if configured("sonarr"):
@@ -217,7 +227,8 @@ async def calendar(days: int = 14):
             items.append({"app": "sonarr", "label": "Sonarr", "when": e.get("airDateUtc"), "title": s.get("title"),
                           "sub": f"S{e.get('seasonNumber', 0):02}E{e.get('episodeNumber', 0):02} · {e.get('title', '')}",
                           "hasFile": e.get("hasFile"), "monitored": e.get("monitored"),
-                          "poster": poster(s.get("images")), "network": s.get("network")})
+                          "poster": poster(s.get("images")), "network": s.get("network"),
+                          "seriesId": e.get("seriesId"), "episodeId": e.get("id")})
     for n in ("radarr", "radarr4k"):
         if not configured(n):
             continue
@@ -228,9 +239,44 @@ async def calendar(days: int = 14):
                 if m.get(key) and rng["start"] <= m[key][:10] <= rng["end"]:
                     items.append({"app": n, "label": LABEL[n], "when": m[key], "title": m.get("title"),
                                   "sub": f"{kind} release · {m.get('year')}", "hasFile": m.get("hasFile"),
-                                  "monitored": m.get("monitored"), "poster": poster(m.get("images"))})
+                                  "monitored": m.get("monitored"), "poster": poster(m.get("images")),
+                                  "movieId": m.get("id")})
     items.sort(key=lambda x: x["when"] or "")
     return {"items": items}
+
+
+# ---------------------------------------------------------------- wanted (missing / below cutoff)
+@api.get("/wanted/{name}")
+async def wanted(name: str, kind: str = "missing", page: int = 1, size: int = 50):
+    if name not in ("sonarr", "radarr", "radarr4k") or kind not in ("missing", "cutoff"):
+        raise HTTPException(404)
+    if not configured(name):
+        return {"items": [], "total": 0}
+    params = {"page": page, "pageSize": min(size, 100), "monitored": "true"}
+    if name == "sonarr":
+        params.update(sortKey="episodes.airDateUtc", sortDirection="descending", includeSeries="true",
+                      includeEpisodeFile="true")
+    else:
+        params.update(sortKey="movieMetadata.sortTitle", sortDirection="ascending")
+    r = await arr(name, f"/wanted/{kind}", params=params)
+    items = []
+    for x in r.get("records", []):
+        if name == "sonarr":
+            s = x.get("series") or {}
+            items.append({"app": name, "id": x["id"], "seriesId": x.get("seriesId"), "title": s.get("title"),
+                          "sub": f"S{x.get('seasonNumber', 0):02}E{x.get('episodeNumber', 0):02} · {x.get('title', '')}",
+                          "when": x.get("airDateUtc"), "poster": poster(s.get("images")), "released": True,
+                          "quality": quality_name((x.get("episodeFile") or {}).get("quality")),
+                          "lastSearch": x.get("lastSearchTime")})
+        else:
+            items.append({"app": name, "id": x["id"], "title": x.get("title"), "sub": str(x.get("year") or ""),
+                          "when": x.get("digitalRelease") or x.get("physicalRelease") or x.get("inCinemas"),
+                          "poster": poster(x.get("images")), "released": bool(x.get("isAvailable")),
+                          "quality": quality_name((x.get("movieFile") or {}).get("quality")),
+                          "lastSearch": x.get("lastSearchTime")})
+    if name != "sonarr":   # released films first; the not-yet-out ones can't be found anyway
+        items.sort(key=lambda i: not i["released"])
+    return {"items": items, "total": r.get("totalRecords", 0), "page": page}
 
 
 # ---------------------------------------------------------------- seerr requests

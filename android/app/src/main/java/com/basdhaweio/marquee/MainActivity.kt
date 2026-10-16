@@ -232,7 +232,7 @@ fun MainScaffold(onSignOut: () -> Unit) {
         }) { pad ->
         NavHost(nav, startDestination = "home", modifier = Modifier.padding(pad)) {
             composable("home") { HomeScreen(nav) }
-            composable("queue") { QueueScreen() }
+            composable("queue") { QueueScreen(nav) }
             composable("library") { LibraryScreen(nav) }
             composable("show/{id}") { ShowScreen(nav, it.arguments!!.getString("id")!!.toInt()) }
             composable("movie/{app}/{id}") { MovieScreen(it.arguments!!.getString("app")!!, it.arguments!!.getString("id")!!.toInt()) }
@@ -240,17 +240,19 @@ fun MainScaffold(onSignOut: () -> Unit) {
             composable("assistant") { AssistantListScreen(nav) }
             composable("chat/{id}") { ChatScreen(it.arguments!!.getString("id")!!.takeIf { id -> id != "new" }) }
             composable("more") { MoreScreen(nav) }
-            composable("requests") { RequestsScreen() }
-            composable("activity") { ActivityScreen() }
+            composable("requests") { RequestsScreen(nav) }
+            composable("activity") { ActivityScreen(nav) }
             composable("indexers") { IndexersScreen() }
-            composable("calendar") { CalendarScreen() }
+            composable("calendar") { CalendarScreen(nav) }
+            composable("wanted") { WantedScreen(nav) }
+            composable("portal/{svc}") { PortalScreen(nav, it.arguments!!.getString("svc")!!) }
             composable("history") { HistoryScreen() }
             composable("settings") { SettingsScreen(onSignOut) }
         }
     }
 }
 
-val MoreRoutes = setOf("more", "requests", "activity", "indexers", "calendar", "history", "settings")
+val MoreRoutes = setOf("more", "requests", "activity", "indexers", "calendar", "wanted", "portal/{svc}", "history", "settings")
 
 fun NavHostController.go(route: String) = navigate(route) { launchSingleTop = true }
 

@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.delay
 import java.time.Duration
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -50,6 +51,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 val Gold = Color(0xFFE0B04A)
+val Bad = Color(0xFFFF6B6B)
+val Good = Color(0xFF4CAF50)
 val AppColors = mapOf("sonarr" to Color(0xFF35C5F4), "radarr" to Color(0xFFFFC230), "radarr4k" to Color(0xFFB57CFF),
     "lidarr" to Color(0xFF1DB954), "prowlarr" to Color(0xFFE66000), "seerr" to Color(0xFF6366F1), "tautulli" to Color(0xFFE5A00D))
 
@@ -70,18 +73,26 @@ fun MarqueeTheme(content: @Composable () -> Unit) = MaterialTheme(colorScheme = 
 class Deps(val session: Session, val api: Api, val snack: SnackbarHostState)
 val LocalDeps = compositionLocalOf<Deps> { error("no deps") }
 
-/** Load data, show a spinner / error with retry, and support pull-to-refresh. */
+/** Load data, show a spinner / error with retry, and support pull-to-refresh. With [autoRefreshMs] it also reloads
+ *  quietly (no spinner, last good data kept on a failed refresh) while the screen is showing. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun <T> Loadable(key: Any? = Unit, load: suspend () -> T, content: @Composable (data: T, reload: () -> Unit) -> Unit) {
+fun <T> Loadable(key: Any? = Unit, load: suspend () -> T, autoRefreshMs: Long? = null,
+                 content: @Composable (data: T, reload: () -> Unit) -> Unit) {
     var tick by remember { mutableIntStateOf(0) }
+    var quiet by remember { mutableStateOf(false) }
     var data by remember(key) { mutableStateOf<T?>(null) }
     var error by remember(key) { mutableStateOf<String?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     LaunchedEffect(key, tick) {
-        refreshing = data != null
-        runCatching { load() }.onSuccess { data = it; error = null }.onFailure { error = it.message ?: it.toString() }
+        val silent = quiet; quiet = false
+        refreshing = data != null && !silent
+        runCatching { load() }.onSuccess { data = it; error = null }
+            .onFailure { if (!silent || data == null) error = it.message ?: it.toString() }
         refreshing = false
+    }
+    if (autoRefreshMs != null) LaunchedEffect(key) {
+        while (true) { delay(autoRefreshMs); quiet = true; tick++ }
     }
     val reload: () -> Unit = { tick++ }
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = reload, modifier = Modifier.fillMaxSize()) {

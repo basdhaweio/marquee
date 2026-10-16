@@ -15,6 +15,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.FindInPage
+import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.PlayCircle
@@ -49,8 +52,10 @@ import kotlinx.coroutines.launch
 @Composable
 fun MoreScreen(nav: NavHostController) {
     val entries = listOf(
+        Triple("calendar", "Calendar", Icons.Filled.CalendarMonth), Triple("wanted", "Wanted (missing & upgrades)", Icons.Filled.FindInPage),
         Triple("requests", "Requests", Icons.Filled.Inbox), Triple("activity", "Activity & stats", Icons.Filled.PlayCircle),
-        Triple("calendar", "Calendar", Icons.Filled.CalendarMonth), Triple("history", "Download history", Icons.Filled.History),
+        Triple("portal/seerr", "Seerr (full site)", Icons.Filled.Public), Triple("portal/tautulli", "Tautulli (full site)", Icons.Filled.Insights),
+        Triple("history", "Download history", Icons.Filled.History),
         Triple("indexers", "Indexers", Icons.AutoMirrored.Filled.List), Triple("settings", "Settings", Icons.Filled.Settings),
     )
     LazyColumn {
@@ -63,11 +68,12 @@ fun MoreScreen(nav: NavHostController) {
 
 // ---------------------------------------------------------------- Seerr requests
 @Composable
-fun RequestsScreen() {
+fun RequestsScreen(nav: NavHostController) {
     val deps = LocalDeps.current
     val scope = rememberCoroutineScope()
     var filter by rememberSaveable { mutableStateOf("pending") }
     Column {
+        PortalLink("Open Seerr") { nav.go("portal/seerr") }
         Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("pending", "processing", "available", "all").forEach {
                 FilterChip(filter == it, { filter = it }, label = { Text(it.replaceFirstChar(Char::uppercase)) })
@@ -96,10 +102,11 @@ fun RequestsScreen() {
 
 // ---------------------------------------------------------------- Tautulli
 @Composable
-fun ActivityScreen() {
+fun ActivityScreen(nav: NavHostController) {
     val deps = LocalDeps.current
     Loadable(load = { deps.api.activity() to runCatching { deps.api.stats(30) }.getOrDefault(emptyMap()) }) { (a, stats), _ ->
         LazyColumn(contentPadding = ListPadding) {
+            item { PortalLink("Open Tautulli") { nav.go("portal/tautulli") } }
             item { SectionTitle("Now playing") }
             if (a.playing.isEmpty()) item { Empty("Nothing playing") }
             items(a.playing) { p ->
@@ -130,24 +137,14 @@ fun ActivityScreen() {
     }
 }
 
-// ---------------------------------------------------------------- calendar + history
+/** A small "open the full site" link at the top of a native screen. */
 @Composable
-fun CalendarScreen() {
-    val deps = LocalDeps.current
-    Loadable(load = { deps.api.calendar(14).items }) { items, _ ->
-        LazyColumn(contentPadding = ListPadding) {
-            if (items.isEmpty()) item { Empty("Nothing in the next two weeks") }
-            items(items) { c ->
-                MediaRow(c.title ?: "", c.sub, c.poster, extra = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AppTag(c.app, c.label); Muted(day(c.time), 1)
-                    }
-                }, trailing = { if (c.hasFile == true) Muted("✓") })
-            }
-        }
+private fun PortalLink(label: String, onClick: () -> Unit) =
+    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.End) {
+        TextButton(onClick = onClick) { Icon(Icons.Filled.Public, null); Spacer(Modifier.width(6.dp)); Text(label) }
     }
-}
 
+// ---------------------------------------------------------------- history
 @Composable
 fun HistoryScreen() {
     val deps = LocalDeps.current
