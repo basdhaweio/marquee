@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from server import media
 from server.core import BASE, DATA, current_user
 
-MODEL = os.environ.get("ASSISTANT_MODEL", "claude-opus-5-5")
+MODEL = os.environ.get("ASSISTANT_MODEL", "claude-sonnet-5-5")   # cheaper than Opus; plenty for admin chores
 EFFORT = os.environ.get("ASSISTANT_EFFORT", "medium")
 MAX_STEPS = 16
 RESULT_CHARS = 14000
