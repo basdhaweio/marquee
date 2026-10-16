@@ -29,16 +29,17 @@ auth = APIRouter(prefix=BASE + "/auth")
 
 
 @auth.post("/pin")
-async def new_pin(request: Request, client: str = "web"):
-    """client=android sends the Plex page back into the app (marquee://signed-in) instead of the PWA."""
-    r = await http.post("https://plex.tv/api/v2/pins", params={"strong": "true"}, headers=PLEX_HEADERS)
+async def new_pin(request: Request, client: str = "web", link: bool = False):
+    """client=android sends the Plex page back into the app (marquee://signed-in) instead of the PWA.
+    link=true makes a short code to type in at plex.tv/link on any device (strong PINs don't work there)."""
+    r = await http.post("https://plex.tv/api/v2/pins", params={"strong": "false" if link else "true"}, headers=PLEX_HEADERS)
     r.raise_for_status()
     pin = r.json()
     forward = "marquee://signed-in" if client == "android" else str(request.base_url).rstrip("/") + BASE + "/#/signed-in"
     url = ("https://app.plex.tv/auth#?" + httpx.QueryParams({
         "clientID": CLIENT_ID, "code": pin["code"], "forwardUrl": forward,
         "context[device][product]": "Marquee"}).__str__())
-    return {"id": pin["id"], "authUrl": url}
+    return {"id": pin["id"], "authUrl": url, "code": pin["code"] if link else None}
 
 
 @auth.get("/pin/{pin_id}")

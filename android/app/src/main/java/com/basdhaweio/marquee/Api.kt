@@ -84,7 +84,8 @@ class Api(private val session: Session) {
         json.decodeFromString(raw("POST", path, body, query))
 
     // ---- auth
-    suspend fun newPin(): Pin = post("/auth/pin", query = mapOf("client" to "android"))
+    suspend fun newPin(link: Boolean = false): Pin =
+        post("/auth/pin", query = if (link) mapOf("client" to "android", "link" to "true") else mapOf("client" to "android"))
     suspend fun checkPin(id: Long): PinStatus = try {
         get("/auth/pin/$id", mapOf("client" to "android"))
     } catch (e: ApiException) {

@@ -96,7 +96,7 @@ import kotlinx.serialization.Serializable
     val pending: List<PendingAction> = emptyList(), val enabled: Boolean = true,
 )
 
-@Serializable data class Pin(val id: Long = 0, val authUrl: String = "")
+@Serializable data class Pin(val id: Long = 0, val authUrl: String = "", val code: String? = null)
 @Serializable data class PinStatus(val status: String = "", val user: String? = null, val token: String? = null)
 @Serializable data class AppLatest(val versionCode: Int = 0, val versionName: String? = null, val notes: String? = null, val url: String? = null)
 

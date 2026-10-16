@@ -1,16 +1,26 @@
 package com.basdhaweio.marquee
 
-import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
+import android.annotation.SuppressLint
+import android.webkit.CookieManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.Job
+import kotlin.coroutines.cancellation.CancellationException
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.browser.customtabs.CustomTabsClient
-import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -86,56 +96,107 @@ class MainActivity : ComponentActivity() {
 }
 
 // ---------------------------------------------------------------- sign in
+// Plex's app claims app.plex.tv links, and Chrome hands them to it even from a pinned Custom Tab, so sign-in runs in
+// our own WebView (which never launches other apps). Google/Apple sign-in refuses WebViews, hence the plex.tv/link code.
 @Composable
 fun SignInScreen(onSignedIn: () -> Unit) {
     val deps = LocalDeps.current
-    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
+    var job by remember { mutableStateOf<Job?>(null) }
+    var webUrl by remember { mutableStateOf<String?>(null) }
+    var linkCode by remember { mutableStateOf<String?>(null) }
+
+    fun cancel() { job?.cancel(); webUrl = null; linkCode = null; status = null }
+    fun start(link: Boolean) {
+        job?.cancel()
+        status = "Asking Plex…"
+        job = scope.launch {
+            try {
+                val pin = deps.api.newPin(link)
+                if (link) linkCode = pin.code else webUrl = pin.authUrl
+                status = null
+                repeat(450) {   // 15 minutes
+                    delay(2000)
+                    val r = runCatching { deps.api.checkPin(pin.id) }.getOrNull() ?: return@repeat
+                    when (r.status) {
+                        "ok" -> { deps.session.token = r.token; deps.session.user = r.user; onSignedIn(); return@launch }
+                        "denied" -> { webUrl = null; linkCode = null; status = "That Plex account isn't allowed here."; return@launch }
+                    }
+                }
+                webUrl = null; linkCode = null; status = "Timed out - try again."
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                webUrl = null; linkCode = null; status = e.message
+            }
+        }
+    }
+
+    webUrl?.let { url ->
+        BackHandler { cancel() }
+        Column(Modifier.fillMaxSize().systemBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { cancel() }) { Text("Cancel") }
+                Text("Sign in to Plex", style = MaterialTheme.typography.titleMedium)
+            }
+            PlexWebView(url, onReturned = { webUrl = null; status = "Finishing sign-in…" })
+        }
+        return
+    }
+    linkCode?.let { code ->
+        BackHandler { cancel() }
+        Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("On any device signed in to Plex, open", textAlign = TextAlign.Center)
+            Text("plex.tv/link", style = MaterialTheme.typography.headlineSmall, color = Gold)
+            Spacer(Modifier.height(16.dp))
+            Text("and enter this code:")
+            Spacer(Modifier.height(8.dp))
+            Text(code, style = MaterialTheme.typography.displayMedium, fontFamily = FontFamily.Monospace, letterSpacing = 6.sp)
+            Spacer(Modifier.height(24.dp))
+            Muted("Waiting for Plex… this screen continues on its own.")
+            Spacer(Modifier.height(16.dp))
+            TextButton(onClick = { cancel() }) { Text("Cancel") }
+        }
+        return
+    }
     Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally) {
         Text("Marquee", style = MaterialTheme.typography.displaySmall, color = Gold)
         Text("Your media server, in one place", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(32.dp))
-        Button(enabled = !busy, onClick = {
-            busy = true; status = "Opening Plex…"
-            scope.launch {
-                try {
-                    val pin = deps.api.newPin()
-                    openInBrowser(ctx, Uri.parse(pin.authUrl))
-                    status = "Waiting for Plex…"
-                    repeat(150) {
-                        delay(2000)
-                        val r = runCatching { deps.api.checkPin(pin.id) }.getOrNull() ?: return@repeat
-                        when (r.status) {
-                            "ok" -> { deps.session.token = r.token; deps.session.user = r.user; onSignedIn(); return@launch }
-                            "denied" -> { status = "That Plex account isn't allowed here."; busy = false; return@launch }
-                        }
-                    }
-                    status = "Timed out - try again."
-                } catch (e: Exception) {
-                    status = e.message
-                }
-                busy = false
-            }
-        }) { Text("Sign in with Plex") }
+        val busy = status == "Asking Plex…" || status == "Finishing sign-in…"
+        Button(enabled = !busy, onClick = { start(link = false) }) { Text("Sign in with Plex") }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(enabled = !busy, onClick = { start(link = true) }) { Text("Use a plex.tv/link code") }
+        Spacer(Modifier.height(8.dp))
+        Muted("Use the code if you sign in to Plex with Google or Apple.")
         status?.let { Spacer(Modifier.height(16.dp)); Text(it, textAlign = TextAlign.Center) }
         Spacer(Modifier.height(24.dp))
         Muted("Server: ${deps.session.server}")
     }
 }
 
-/** The Plex app claims app.plex.tv links, so an unpinned intent opens it instead of the sign-in page.
- *  Pin the tab to a real browser (the default one if it does Custom Tabs) and never hand off to other apps. */
-fun openInBrowser(ctx: Context, uri: Uri) {
-    val pm = ctx.packageManager
-    val probe = Intent(Intent.ACTION_VIEW, Uri.parse("http://example.com"))   // what plain web links resolve to
-    val browsers = pm.queryIntentActivities(probe, PackageManager.MATCH_ALL).map { it.activityInfo.packageName }
-    val pkg = CustomTabsClient.getPackageName(ctx, browsers) ?: browsers.firstOrNull()
-    val tab = CustomTabsIntent.Builder().setSendToExternalDefaultHandlerEnabled(false).build()
-    if (pkg != null) tab.intent.setPackage(pkg)
-    tab.launchUrl(ctx, uri)
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun PlexWebView(url: String, onReturned: () -> Unit) {
+    AndroidView(modifier = Modifier.fillMaxSize(), factory = { ctx ->
+        WebView(ctx).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                    val scheme = request.url.scheme
+                    if (scheme == "http" || scheme == "https") return false   // keep every web page in here
+                    if (scheme == "marquee") onReturned()                    // Plex's forwardUrl: done
+                    return true                                               // swallow plex:// and intent:// app launches
+                }
+            }
+            loadUrl(url)
+        }
+    }, onRelease = { it.destroy() })
 }
 
 // ---------------------------------------------------------------- shell
