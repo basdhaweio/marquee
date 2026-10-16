@@ -42,6 +42,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -96,8 +97,8 @@ class MainActivity : ComponentActivity() {
 }
 
 // ---------------------------------------------------------------- sign in
-// Plex's app claims app.plex.tv links, and Chrome hands them to it even from a pinned Custom Tab, so sign-in runs in
-// our own WebView (which never launches other apps). Google/Apple sign-in refuses WebViews, hence the plex.tv/link code.
+// Plex sign-in runs in our own WebView, which never hands links to the Plex app (that app claims plex.tv URLs).
+// Google/Apple sign-in may refuse a WebView, hence the plex.tv/link code option.
 @Composable
 fun SignInScreen(onSignedIn: () -> Unit) {
     val deps = LocalDeps.current
@@ -133,54 +134,58 @@ fun SignInScreen(onSignedIn: () -> Unit) {
         }
     }
 
-    webUrl?.let { url ->
-        BackHandler { cancel() }
-        Column(Modifier.fillMaxSize().systemBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { cancel() }) { Text("Cancel") }
-                Text("Sign in to Plex", style = MaterialTheme.typography.titleMedium)
+    val url = webUrl
+    val code = linkCode
+    Surface(Modifier.fillMaxSize()) {
+        when {
+            url != null -> {
+                BackHandler { cancel() }
+                Column(Modifier.fillMaxSize().systemBarsPadding()) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { cancel() }) { Text("Cancel") }
+                        Text("Sign in to Plex", style = MaterialTheme.typography.titleMedium)
+                    }
+                    PlexWebView(url)
+                }
             }
-            PlexWebView(url, onReturned = { webUrl = null; status = "Finishing sign-in…" })
+            code != null -> {
+                BackHandler { cancel() }
+                Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("On any device signed in to Plex, open", textAlign = TextAlign.Center)
+                    Text("plex.tv/link", style = MaterialTheme.typography.headlineSmall, color = Gold)
+                    Spacer(Modifier.height(16.dp))
+                    Text("and enter this code:")
+                    Spacer(Modifier.height(8.dp))
+                    Text(code, style = MaterialTheme.typography.displayMedium, fontFamily = FontFamily.Monospace, letterSpacing = 6.sp)
+                    Spacer(Modifier.height(24.dp))
+                    Muted("Waiting for Plex… this screen continues on its own.")
+                    Spacer(Modifier.height(16.dp))
+                    TextButton(onClick = { cancel() }) { Text("Cancel") }
+                }
+            }
+            else -> Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Marquee", style = MaterialTheme.typography.displaySmall, color = Gold)
+                Text("Your media server, in one place", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(32.dp))
+                val busy = status == "Asking Plex…"
+                Button(enabled = !busy, onClick = { start(link = false) }) { Text("Sign in with Plex") }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(enabled = !busy, onClick = { start(link = true) }) { Text("Use a plex.tv/link code") }
+                Spacer(Modifier.height(8.dp))
+                Muted("Use the code if you sign in to Plex with Google or Apple.")
+                status?.let { Spacer(Modifier.height(16.dp)); Text(it, textAlign = TextAlign.Center) }
+                Spacer(Modifier.height(24.dp))
+                Muted("Server: ${deps.session.server}")
+            }
         }
-        return
-    }
-    linkCode?.let { code ->
-        BackHandler { cancel() }
-        Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("On any device signed in to Plex, open", textAlign = TextAlign.Center)
-            Text("plex.tv/link", style = MaterialTheme.typography.headlineSmall, color = Gold)
-            Spacer(Modifier.height(16.dp))
-            Text("and enter this code:")
-            Spacer(Modifier.height(8.dp))
-            Text(code, style = MaterialTheme.typography.displayMedium, fontFamily = FontFamily.Monospace, letterSpacing = 6.sp)
-            Spacer(Modifier.height(24.dp))
-            Muted("Waiting for Plex… this screen continues on its own.")
-            Spacer(Modifier.height(16.dp))
-            TextButton(onClick = { cancel() }) { Text("Cancel") }
-        }
-        return
-    }
-    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Marquee", style = MaterialTheme.typography.displaySmall, color = Gold)
-        Text("Your media server, in one place", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(32.dp))
-        val busy = status == "Asking Plex…" || status == "Finishing sign-in…"
-        Button(enabled = !busy, onClick = { start(link = false) }) { Text("Sign in with Plex") }
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(enabled = !busy, onClick = { start(link = true) }) { Text("Use a plex.tv/link code") }
-        Spacer(Modifier.height(8.dp))
-        Muted("Use the code if you sign in to Plex with Google or Apple.")
-        status?.let { Spacer(Modifier.height(16.dp)); Text(it, textAlign = TextAlign.Center) }
-        Spacer(Modifier.height(24.dp))
-        Muted("Server: ${deps.session.server}")
     }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun PlexWebView(url: String, onReturned: () -> Unit) {
+private fun PlexWebView(url: String) {
     AndroidView(modifier = Modifier.fillMaxSize(), factory = { ctx ->
         WebView(ctx).apply {
             settings.javaScriptEnabled = true
@@ -189,9 +194,7 @@ private fun PlexWebView(url: String, onReturned: () -> Unit) {
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val scheme = request.url.scheme
-                    if (scheme == "http" || scheme == "https") return false   // keep every web page in here
-                    if (scheme == "marquee") onReturned()                    // Plex's forwardUrl: done
-                    return true                                               // swallow plex:// and intent:// app launches
+                    return scheme != "http" && scheme != "https"   // keep web pages in here; swallow plex:// and intent://
                 }
             }
             loadUrl(url)

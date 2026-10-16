@@ -30,15 +30,17 @@ auth = APIRouter(prefix=BASE + "/auth")
 
 @auth.post("/pin")
 async def new_pin(request: Request, client: str = "web", link: bool = False):
-    """client=android sends the Plex page back into the app (marquee://signed-in) instead of the PWA.
+    """client=android: no forward back to the PWA; the app polls instead.
     link=true makes a short code to type in at plex.tv/link on any device (strong PINs don't work there)."""
     r = await http.post("https://plex.tv/api/v2/pins", params={"strong": "false" if link else "true"}, headers=PLEX_HEADERS)
     r.raise_for_status()
     pin = r.json()
-    forward = "marquee://signed-in" if client == "android" else str(request.base_url).rstrip("/") + BASE + "/#/signed-in"
-    url = ("https://app.plex.tv/auth#?" + httpx.QueryParams({
-        "clientID": CLIENT_ID, "code": pin["code"], "forwardUrl": forward,
-        "context[device][product]": "Marquee"}).__str__())
+    params = {"clientID": CLIENT_ID, "code": pin["code"], "context[device][product]": "Marquee"}
+    # Plex's page bounces to plex.tv (which the Plex app then grabs) when forwardUrl isn't http(s), so the Android
+    # app gets none: it shows the page in its own WebView and its poll notices the sign-in.
+    if client != "android":
+        params["forwardUrl"] = str(request.base_url).rstrip("/") + BASE + "/#/signed-in"
+    url = "https://app.plex.tv/auth#?" + str(httpx.QueryParams(params))
     return {"id": pin["id"], "authUrl": url, "code": pin["code"] if link else None}
 
 
